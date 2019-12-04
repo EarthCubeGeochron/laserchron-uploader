@@ -1,6 +1,19 @@
 # laserchron-uploader
 Upload data to the LaserChron archive
 
+## Installation
+
+Requires Python 3 (tested on Python 3.7).
+Clone the code and then run
+`pip install -r requirements.txt`.
+Populate the `.env` file with configuration
+parameters.
+Execute with
+```
+./upload-laserchron-data.py
+```
+
+
 ## Useful s3 tools
 
 `s3cmd` is a command line interface to S3. It can be used for basic management
