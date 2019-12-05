@@ -23,7 +23,10 @@ def md5hash(fname):
     return hash.hexdigest()
 
 def key_from_filename(f_name):
-    return str(f_name.relative_to(data_path))
+    """
+    Get prefixed key for AWS storage service
+    """
+    return str(f_name.relative_to(data_path).as_posix())
 
 def get_content_type(f_name):
     if f_name.suffix == '.xls':
@@ -33,6 +36,10 @@ def get_content_type(f_name):
     if f_name.suffix == '.xlsm':
         return 'application/vnd.ms-excel.sheet.macroEnabled.12'
     return 'binary/octet-stream'
+
+def status(msg, **kwargs):
+    secho("...", nl=False, dim=True)
+    secho(msg, **kwargs)
 
 load_dotenv(verbose=True)
 
@@ -46,7 +53,7 @@ client = boto3.client('s3',
     aws_access_key_id=getenv('DO_SPACES_KEY'),
     aws_secret_access_key=getenv('DO_SPACES_SECRET'))
 
-def upload_file(f_name, content_hash):
+def upload_file(f_name, content_hash, is_overwrite=False):
     """Upload json file to the S3 bucket
     :param f_name: path to json file to upload
 
@@ -59,27 +66,40 @@ def upload_file(f_name, content_hash):
             ExtraArgs=dict(
                 ContentType=get_content_type(f_name),
                 Metadata={'Content-MD5': content_hash}))
+    if is_overwrite:
+        status("updated", fg='cyan')
+    else:
+        status("created", fg='cyan')
 
 
 file_list = chain(data_path.glob("**/*.xls[xm]"), data_path.glob("**/*.xls"))
 
-def status(msg, **kwargs):
-    secho("...", nl=False, dim=True)
-    secho(msg, **kwargs)
+def get_head(**kwargs):
+    try:
+        head = client.head_object(**kwargs)
+    except ClientError as err:
+        return None
+    return head
+
+def process_file(fn):
+    # Try to get file head object
+    s3key = key_from_filename(fn)
+    echo(s3key)
+    content_hash=md5hash(fn)
+    # Unfortunately, we can only get buckets by their key.
+    # We have to have another process to deduplicate data
+    # We will probably build this into the Sparrow importer.
+    head = get_head(Bucket=_bucket, Key=s3key)
+
+    if head is None:
+        upload_file(fn, content_hash)
+        return
+
+    if head['Metadata']['content-md5'] == content_hash:
+        status("already exists", fg='green')
+    else:
+        status("exists with changes", fg='yellow')
+        upload_file(fn, content_hash, is_overwrite=True)
 
 for fn in file_list:
-    # Try to get file head object
-    echo(key_from_filename(fn))
-    content_hash=md5hash(fn)
-    try:
-        head = client.head_object(Bucket=_bucket, Key=key_from_filename(fn))
-        # Check if the file has changes
-        assert head['Metadata']['content-md5'] == content_hash
-        status("aready exists", fg='green')
-    except ClientError:
-        upload_file(fn, content_hash)
-        status("created", fg='cyan')
-    except AssertionError:
-        status("exists with changes", fg='yellow')
-        upload_file(fn, content_hash)
-        status("overwritten with new version", fg='cyan')
+    process_file(fn)
