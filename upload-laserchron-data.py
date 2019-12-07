@@ -106,7 +106,8 @@ class FolderImporter(object):
 
     def process_files(self):
         file_list = chain(
-            self.base_path.glob("**/*.xls[xm]"),
+            self.base_path.glob("**/*.xlsx"),
+            self.base_path.glob("**/*.xlsm"),
             self.base_path.glob("**/*.xls"))
 
         for fn in file_list:
