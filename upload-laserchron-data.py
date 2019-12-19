@@ -49,8 +49,9 @@ client = boto3.client('s3',
 
 
 class FolderImporter(object):
-    def __init__(self, base_path, bucket=None):
+    def __init__(self, base_path, bucket=None, dry_run=False):
         self.base_path = Path(base_path)
+        self.dry_run = dry_run
 
     def key_for_filename(self, f_name):
         """
@@ -92,6 +93,9 @@ class FolderImporter(object):
 
         See https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/s3.html#S3.Bucket.put_object
         """
+        if self.dry_run:
+            return
+
         with open(f_name, 'rb') as f:
             client.upload_fileobj(f,
                 Bucket=_bucket,
@@ -105,24 +109,29 @@ class FolderImporter(object):
             status("created", fg='cyan')
 
     def process_files(self):
-        file_list = chain(
-            self.base_path.glob("**/*.xlsx"),
-            self.base_path.glob("**/*.xlsm"),
-            self.base_path.glob("**/*.xls"))
+        if self.dry_run:
+            echo("Starting dry run")
 
-        for fn in file_list:
+        EXTENSIONS = {'.xls', '.xlsx', '.xlsm'}
+
+        all_files = self.base_path.glob("**/*.*")
+        excel_files = (f for f in all_files if f.is_file()
+                                and f.suffix in EXTENSIONS)
+
+        for fn in excel_files:
             self.process_file(fn)
 
 folder_arg = click.Path(file_okay=False, dir_okay=True, resolve_path=True, exists=True)
 
 @click.command(name="import-laserchron")
 @click.argument("paths", type=folder_arg, nargs=-1)
-def import_laserchron(paths):
+@click.option("--dry-run", is_flag=True, default=False)
+def import_laserchron(paths, dry_run=False):
     if len(paths) == 0:
         paths = (getenv("LASERCHRON_UPLOADER_PATH"),)
     print(paths)
     for import_path in paths:
-        FolderImporter(import_path).process_files()
+        FolderImporter(import_path, dry_run=dry_run).process_files()
 
 
 if __name__ == '__main__':
